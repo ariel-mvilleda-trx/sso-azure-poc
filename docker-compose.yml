@@ -1,0 +1,55 @@
+version: "3.9"
+
+services:
+  # Backend API - FastAPI con Python
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: auth-test-api
+    ports:
+      - "8000:8000"
+    environment:
+      # Variables de entorno desde .env (requeridas)
+      TENANT_ID: ${TENANT_ID}
+      API_CLIENT_ID: ${API_CLIENT_ID}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      PORT: ${PORT}
+    volumes:
+      # Mount para desarrollo (permitir cambios sin rebuild)
+      - ./api.py:/app/api.py
+      - ./requirements.txt:/app/requirements.txt
+      - ./.env:/app/.env
+    networks:
+      - auth-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Frontend - Nginx sirviendo el HTML estático
+  frontend:
+    image: nginx:alpine
+    container_name: auth-test-frontend
+    ports:
+      - "5500:80"
+    volumes:
+      - ./index.html:/usr/share/nginx/html/index.html
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    networks:
+      - auth-network
+    depends_on:
+      - api
+    healthcheck:
+      test:
+        ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  auth-network:
+    driver: bridge

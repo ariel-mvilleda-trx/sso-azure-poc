@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SSO POC - Azure Entra ID</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        .success { color: green; }
+        .error { color: red; }
+        pre { background: #f4f4f4; padding: 15px; overflow-x: auto; border-radius: 5px; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+    <h1>POC: Azure Entra ID SSO</h1>
+    
+    <div id="not-authenticated">
+        <p>No has iniciado sesión.</p>
+        <button onclick="login()">Iniciar Sesión con Microsoft</button>
+    </div>
+    
+    <div id="authenticated" class="hidden">
+        <h2 class="success">✓ Autenticado</h2>
+        <button onclick="logout()">Cerrar Sesión</button>
+        <button onclick="callApi()">Llamar API /me</button>
+        <button onclick="debugToken()">Debug Token</button>
+        
+        <div id="user-info">
+            <h3>Usuario:</h3>
+            <pre id="user-claims"></pre>
+        </div>
+        
+        <div id="api-response" class="hidden">
+            <h3>Respuesta de la API:</h3>
+            <pre id="api-result"></pre>
+        </div>
+    </div>
+
+    <script src="https://alcdn.msauth.net/browser/2.38.0/js/msal-browser.min.js"></script>
+    
+    <script>
+        // ============================================
+        // CONFIGURACIÓN DESDE VARIABLES DE ENTORNO
+        // (cargadas desde el backend)
+        // ============================================
+        let TENANT_ID, CLIENT_ID, API_CLIENT_ID, API_BASE_URL;
+        let msalConfig, loginRequest, msalInstance, accessToken = null;
+
+        // Cargar configuración del backend
+        async function initializeApp() {
+            try {
+                // Leer variables de entorno del frontend (si están disponibles globalmente)
+                API_BASE_URL = window.CONFIG?.API_BASE_URL || "http://localhost:8000";
+                CLIENT_ID = window.CONFIG?.CLIENT_ID || "806c2125-9965-4337-8362-210d46d31288"; // SPA registrada en Azure EntraID
+                TENANT_ID = window.CONFIG?.TENANT_ID;
+                API_CLIENT_ID = window.CONFIG?.API_CLIENT_ID;
+
+                // Intentar obtener configuración desde /api/config del backend
+                try {
+                    const configResponse = await fetch(`${API_BASE_URL}/api/config`);
+                    if (configResponse.ok) {
+                        const config = await configResponse.json();
+                        TENANT_ID = config.tenant_id || TENANT_ID;
+                        API_CLIENT_ID = config.api_client_id || API_CLIENT_ID;
+                    }
+                } catch (e) {
+                    console.warn("No se pudo cargar configuración del backend, usando valores por defecto");
+                }
+
+                // Configurar MSAL
+                msalConfig = {
+                    auth: {
+                        clientId: CLIENT_ID,
+                        authority: `https://traxionexternal.ciamlogin.com/${TENANT_ID}`,
+                        redirectUri: window.location.origin + "/index.html",
+                    },
+                    cache: {
+                        cacheLocation: "sessionStorage",
+                    },
+                };
+
+                // Scopes: incluye el scope de la API
+                loginRequest = {
+                    scopes: ["openid", "profile", `api://${API_CLIENT_ID}/access`],
+                };
+
+                // ============================================
+                // MSAL
+                // ============================================
+                msalInstance = new msal.PublicClientApplication(msalConfig);
+
+                msalInstance.initialize().then(() => {
+                    msalInstance.handleRedirectPromise().then(handleResponse).catch(console.error);
+                });
+            } catch (error) {
+                console.error("Error inicializando aplicación:", error);
+            }
+        }
+
+        // Inicializar cuando el DOM esté listo
+        initializeApp();
+
+        function handleResponse(response) {
+            if (response) {
+                accessToken = response.accessToken;
+                showAuthenticatedUI(response.account);
+            } else {
+                const accounts = msalInstance.getAllAccounts();
+                if (accounts.length > 0) {
+                    msalInstance.acquireTokenSilent({
+                        ...loginRequest,
+                        account: accounts[0]
+                    }).then(response => {
+                        accessToken = response.accessToken;
+                        showAuthenticatedUI(accounts[0]);
+                    }).catch(() => {});
+                }
+            }
+        }
+
+        function login() {
+            msalInstance.loginRedirect(loginRequest);
+        }
+
+        function logout() {
+            msalInstance.logoutRedirect();
+        }
+
+        function showAuthenticatedUI(account) {
+            document.getElementById("not-authenticated").classList.add("hidden");
+            document.getElementById("authenticated").classList.remove("hidden");
+            document.getElementById("user-claims").textContent = JSON.stringify({
+                name: account.name,
+                username: account.username,
+            }, null, 2);
+        }
+
+        async function callApi() {
+            if (!accessToken) {
+                alert("No hay token disponible");
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/me`, {
+                    headers: { "Authorization": `Bearer ${accessToken}` }
+                });
+                const data = await response.json();
+                
+                document.getElementById("api-response").classList.remove("hidden");
+                document.getElementById("api-result").textContent = JSON.stringify(data, null, 2);
+                document.getElementById("api-result").style.color = response.ok ? "green" : "red";
+            } catch (error) {
+                document.getElementById("api-response").classList.remove("hidden");
+                document.getElementById("api-result").textContent = `Error: ${error.message}`;
+                document.getElementById("api-result").style.color = "red";
+            }
+        }
+
+        async function debugToken() {
+            if (!accessToken) {
+                alert("No hay token disponible");
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/debug-token`, {
+                    headers: { "Authorization": `Bearer ${accessToken}` }
+                });
+                const data = await response.json();
+                
+                document.getElementById("api-response").classList.remove("hidden");
+                document.getElementById("api-result").textContent = JSON.stringify(data, null, 2);
+                document.getElementById("api-result").style.color = "blue";
+            } catch (error) {
+                document.getElementById("api-response").classList.remove("hidden");
+                document.getElementById("api-result").textContent = `Error: ${error.message}`;
+                document.getElementById("api-result").style.color = "red";
+            }
+        }
+    </script>
+</body>
+</html>
