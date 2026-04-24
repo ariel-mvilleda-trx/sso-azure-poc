@@ -1,29 +1,58 @@
 version: "3.9"
 
 services:
-  # Backend API - FastAPI con Python
-  api:
+  # Backend API A - FastAPI con Python
+  api-a:
     build:
       context: .
-      dockerfile: Dockerfile
-    container_name: auth-test-api
+      dockerfile: Dockerfile.api_a
+    container_name: auth-test-api-a
     ports:
       - "8000:8000"
     environment:
       # Variables de entorno desde .env (requeridas)
       TENANT_ID: ${TENANT_ID}
       API_CLIENT_ID: ${API_CLIENT_ID}
+      API_B_CLIENT_ID: ${API_B_CLIENT_ID}
       CORS_ORIGINS: ${CORS_ORIGINS}
-      PORT: ${PORT}
+      PORT: ${PORT_A}
     volumes:
       # Mount para desarrollo (permitir cambios sin rebuild)
-      - ./api.py:/app/api.py
+      - ./api_a.py:/app/api_a.py
       - ./requirements.txt:/app/requirements.txt
       - ./.env:/app/.env
     networks:
       - auth-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # Backend API B - FastAPI con Python (segunda API)
+  api-b:
+    build:
+      context: .
+      dockerfile: Dockerfile.api_b
+    container_name: auth-test-api-b
+    ports:
+      - "8002:8002"
+    environment:
+      # Variables de entorno desde .env (requeridas)
+      TENANT_ID: ${TENANT_ID}
+      API_B_CLIENT_ID: ${API_B_CLIENT_ID}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      PORT_B: ${PORT_B:-8002}
+    volumes:
+      # Mount para desarrollo (permitir cambios sin rebuild)
+      - ./api_b.py:/app/api_b.py
+      - ./requirements.txt:/app/requirements.txt
+      - ./.env:/app/.env
+    networks:
+      - auth-network
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8002/" ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -41,10 +70,10 @@ services:
     networks:
       - auth-network
     depends_on:
-      - api
+      - api-a
+      - api-b
     healthcheck:
-      test:
-        ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      test: [ "CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/" ]
       interval: 30s
       timeout: 10s
       retries: 3

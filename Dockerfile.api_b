@@ -1,4 +1,4 @@
-# Dockerfile para la API FastAPI
+# Dockerfile para la API B FastAPI
 
 FROM python:3.12-slim
 
@@ -16,10 +16,10 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copiar código de la aplicación
-COPY api.py .
+COPY api_b.py .
 
 # Exponer puerto
-EXPOSE 8000
+EXPOSE 8002
 
 # Comando para ejecutar la aplicación
-CMD ["python", "api.py"]
+CMD ["python", "api_b.py"]

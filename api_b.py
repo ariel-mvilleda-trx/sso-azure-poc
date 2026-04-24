@@ -1,5 +1,6 @@
 """
-API Backend - Valida ID Tokens JWT emitidos por Azure Entra ID (CIAM)
+API B Backend - Valida ID Tokens JWT emitidos por Azure Entra ID (CIAM)
+Segunda API para demostrar autenticación multi-API
 """
 
 import os
@@ -16,13 +17,13 @@ from jose import JWTError, jwt
 # Cargar variables de entorno desde .env
 load_dotenv()
 
-app = FastAPI(title="Protected API")
+app = FastAPI(title="Protected API B")
 
 # ============================================
 # CONFIGURACIÓN DESDE VARIABLES DE ENTORNO
 # ============================================
 TENANT_ID = os.getenv("TENANT_ID")
-API_CLIENT_ID = os.getenv("API_CLIENT_ID")
+API_B_CLIENT_ID = os.getenv("API_B_CLIENT_ID")
 CORS_ORIGINS = os.getenv(
     "CORS_ORIGINS", "http://localhost:5500,http://127.0.0.1:5500"
 ).split(",")
@@ -40,8 +41,8 @@ security = HTTPBearer()
 
 # Audiences válidos (Azure puede usar el client_id o api://{client_id})
 VALID_AUDIENCES = [
-    API_CLIENT_ID,
-    f"api://{API_CLIENT_ID}",
+    API_B_CLIENT_ID,
+    f"api://{API_B_CLIENT_ID}",
 ]
 
 # JWKS URL para obtener las claves públicas
@@ -113,16 +114,7 @@ async def validate_token(
 
 @app.get("/")
 def root():
-    return {"message": "API is running", "docs": "/docs"}
-
-
-@app.get("/api/config")
-def get_config():
-    """Retorna configuración pública para el frontend"""
-    return {
-        "tenant_id": TENANT_ID,
-        "api_client_id": API_CLIENT_ID,
-    }
+    return {"message": "API B is running", "docs": "/docs"}
 
 
 @app.get("/debug-token")
@@ -146,10 +138,9 @@ async def debug_token(credentials: HTTPAuthorizationCredentials = Security(secur
 
 @app.get("/me")
 async def get_current_user(claims: dict = Security(validate_token)):
-    """Retorna información del usuario autenticado"""
-    # IMPORTANTE : Alternativamente, podrías hacer una llamada a Microsoft Graph aquí usando
-    # el token para obtener info adicional del usuario no permitida en el jwt.
+    """Retorna información del usuario autenticado desde API B"""
     return {
+        "source": "API B",
         "token_claims": claims,
         "user_id": claims.get("sub"),
         "email": claims.get("preferred_username"),
@@ -161,10 +152,11 @@ async def get_current_user(claims: dict = Security(validate_token)):
 async def protected_endpoint(claims: dict = Security(validate_token)):
     """Endpoint protegido de ejemplo"""
     return {
-        "message": f"Hello {claims.get('name', 'user')}!",
+        "source": "API B",
+        "message": f"Hello from API B, {claims.get('name', 'user')}!",
         "user_id": claims.get("sub"),
     }
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, port=int(os.getenv("PORT", 8000)), host="0.0.0.0")
+    uvicorn.run(app, port=int(os.getenv("PORT_B", 8002)), host="0.0.0.0")

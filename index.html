@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SSO POC - Azure Entra ID</title>
+    <title>SSO POC - SPA Front | Azure Entra ID</title>
     <style>
         body { font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }
         button { padding: 10px 20px; margin: 5px; cursor: pointer; }
@@ -14,7 +14,7 @@
     </style>
 </head>
 <body>
-    <h1>POC: Azure Entra ID SSO</h1>
+    <h1>POC: Azure Entra ID SSO - SPA Front</h1>
     
     <div id="not-authenticated">
         <p>No has iniciado sesión.</p>
@@ -24,17 +24,24 @@
     <div id="authenticated" class="hidden">
         <h2 class="success">✓ Autenticado</h2>
         <button onclick="logout()">Cerrar Sesión</button>
-        <button onclick="callApi()">Llamar API /me</button>
-        <button onclick="debugToken()">Debug Token</button>
+        <button onclick="callApiA()">Llamar API A /me</button>
+        <button onclick="callApiB()">Llamar API B /me</button>
+        <button onclick="debugTokenA()">Debug Token API A</button>
+        <button onclick="debugTokenB()">Debug Token API B</button>
         
         <div id="user-info">
             <h3>Usuario:</h3>
             <pre id="user-claims"></pre>
         </div>
         
-        <div id="api-response" class="hidden">
-            <h3>Respuesta de la API:</h3>
-            <pre id="api-result"></pre>
+        <div id="api-a-response" class="hidden">
+            <h3>Respuesta de API A:</h3>
+            <pre id="api-a-result"></pre>
+        </div>
+        
+        <div id="api-b-response" class="hidden">
+            <h3>Respuesta de API B:</h3>
+            <pre id="api-b-result"></pre>
         </div>
     </div>
 
@@ -45,29 +52,19 @@
         // CONFIGURACIÓN DESDE VARIABLES DE ENTORNO
         // (cargadas desde el backend)
         // ============================================
-        let TENANT_ID, CLIENT_ID, API_CLIENT_ID, API_BASE_URL;
+        let TENANT_ID, CLIENT_ID, API_A_CLIENT_ID, API_B_CLIENT_ID, API_A_BASE_URL, API_B_BASE_URL;
         let msalConfig, loginRequest, msalInstance, accessToken = null;
 
         // Cargar configuración del backend
         async function initializeApp() {
             try {
                 // Leer variables de entorno del frontend (si están disponibles globalmente)
-                API_BASE_URL = window.CONFIG?.API_BASE_URL || "http://localhost:8000";
+                API_A_BASE_URL = window.CONFIG?.API_A_BASE_URL || "http://localhost:8000";
+                API_B_BASE_URL = window.CONFIG?.API_B_BASE_URL || "http://localhost:8002";
                 CLIENT_ID = window.CONFIG?.CLIENT_ID || "806c2125-9965-4337-8362-210d46d31288"; // SPA registrada en Azure EntraID
-                TENANT_ID = window.CONFIG?.TENANT_ID;
-                API_CLIENT_ID = window.CONFIG?.API_CLIENT_ID;
-
-                // Intentar obtener configuración desde /api/config del backend
-                try {
-                    const configResponse = await fetch(`${API_BASE_URL}/api/config`);
-                    if (configResponse.ok) {
-                        const config = await configResponse.json();
-                        TENANT_ID = config.tenant_id || TENANT_ID;
-                        API_CLIENT_ID = config.api_client_id || API_CLIENT_ID;
-                    }
-                } catch (e) {
-                    console.warn("No se pudo cargar configuración del backend, usando valores por defecto");
-                }
+                TENANT_ID = window.CONFIG?.TENANT_ID || "69dd60e9-25af-4faf-b218-c001e35da267"; // Azure EntraID project tenant ID
+                API_A_CLIENT_ID = window.CONFIG?.API_A_CLIENT_ID || "fd0c747e-f68d-4592-99ef-9f7cb53426e5"; // app apiA Azure EntraID
+                API_B_CLIENT_ID = window.CONFIG?.API_B_CLIENT_ID || "06ddbb66-03f4-4892-b4f1-4bbbde45d0ad"; // app apiB Azure EntraID
 
                 // Configurar MSAL
                 msalConfig = {
@@ -83,7 +80,7 @@
 
                 // Scopes: incluye el scope de la API
                 loginRequest = {
-                    scopes: ["openid", "profile", `api://${API_CLIENT_ID}/access`],
+                    scopes: ["openid", "profile"],
                 };
 
                 // ============================================
@@ -94,6 +91,16 @@
                 msalInstance.initialize().then(() => {
                     msalInstance.handleRedirectPromise().then(handleResponse).catch(console.error);
                 });
+
+                // // obtener token para apiapp A ,dependiendo la funcionalidad delflujo seguido en el front
+                // const tokenA = await msalInstance.acquireTokenSilent({
+                //     scopes: [`api://${API_A_CLIENT_ID}/access`]
+                // });
+
+                // // obtener token para apiapp B ,dependiendo la funcionalidad delflujo seguido en el front
+                // const tokenB = await msalInstance.acquireTokenSilent({
+                //     scopes: [`api://${API_B_CLIENT_ID}/access`]
+                // });
             } catch (error) {
                 console.error("Error inicializando aplicación:", error);
             }
@@ -137,47 +144,99 @@
             }, null, 2);
         }
 
-        async function callApi() {
+        async function callApiA() {
             if (!accessToken) {
                 alert("No hay token disponible");
                 return;
             }
 
             try {
-                const response = await fetch(`${API_BASE_URL}/me`, {
-                    headers: { "Authorization": `Bearer ${accessToken}` }
+                const tokenRequest = {
+                    scopes: [`api://${API_A_CLIENT_ID}/access`],
+                    account: msalInstance.getAllAccounts()[0]
+                };
+
+                let tokenResponse;
+                try {
+                    // Intentar obtener token silenciosamente
+                    tokenResponse = await msalInstance.acquireTokenSilent(tokenRequest);
+                } catch (silentError) {
+                    // Si falla (ej: falta consentimiento), solicitar interactivamente
+                    console.log("Token silencioso falló, solicitando consentimiento interactivo...", silentError);
+                    tokenResponse = await msalInstance.acquireTokenPopup(tokenRequest);
+                }
+                
+                const response = await fetch(`${API_A_BASE_URL}/me`, {
+                    headers: { "Authorization": `Bearer ${tokenResponse.accessToken}` }
                 });
                 const data = await response.json();
                 
-                document.getElementById("api-response").classList.remove("hidden");
-                document.getElementById("api-result").textContent = JSON.stringify(data, null, 2);
-                document.getElementById("api-result").style.color = response.ok ? "green" : "red";
+                document.getElementById("api-a-response").classList.remove("hidden");
+                document.getElementById("api-a-result").textContent = JSON.stringify(data, null, 2);
+                document.getElementById("api-a-result").style.color = response.ok ? "green" : "red";
             } catch (error) {
-                document.getElementById("api-response").classList.remove("hidden");
-                document.getElementById("api-result").textContent = `Error: ${error.message}`;
-                document.getElementById("api-result").style.color = "red";
+                document.getElementById("api-a-response").classList.remove("hidden");
+                document.getElementById("api-a-result").textContent = `Error: ${error.message}`;
+                document.getElementById("api-a-result").style.color = "red";
             }
         }
 
-        async function debugToken() {
+        async function callApiB() {
             if (!accessToken) {
                 alert("No hay token disponible");
                 return;
             }
 
             try {
-                const response = await fetch(`${API_BASE_URL}/debug-token`, {
+                const tokenRequest = {
+                    scopes: [`api://${API_B_CLIENT_ID}/access`],
+                    account: msalInstance.getAllAccounts()[0]
+                };
+
+                let tokenResponse;
+                try {
+                    // Intentar obtener token silenciosamente
+                    tokenResponse = await msalInstance.acquireTokenSilent(tokenRequest);
+                } catch (silentError) {
+                    // Si falla (ej: falta consentimiento), solicitar interactivamente
+                    console.log("Token silencioso falló, solicitando consentimiento interactivo...", silentError);
+                    tokenResponse = await msalInstance.acquireTokenPopup(tokenRequest);
+                }
+                
+                const response = await fetch(`${API_B_BASE_URL}/me`, {
+                    headers: { "Authorization": `Bearer ${tokenResponse.accessToken}` }
+                });
+                const data = await response.json();
+                
+                document.getElementById("api-b-response").classList.remove("hidden");
+                document.getElementById("api-b-result").textContent = JSON.stringify(data, null, 2);
+                document.getElementById("api-b-result").style.color = response.ok ? "green" : "red";
+            } catch (error) {
+                document.getElementById("api-b-response").classList.remove("hidden");
+                document.getElementById("api-b-result").textContent = `Error: ${error.message}`;
+                document.getElementById("api-b-result").style.color = "red";
+            }
+        }
+
+        async function debugTokenB() {
+            if (!accessToken) {
+                alert("No hay token disponible");
+                return;
+            }
+
+            try {
+                const response = await fetch(`${API_B_BASE_URL}/debug-token`, {
                     headers: { "Authorization": `Bearer ${accessToken}` }
                 });
                 const data = await response.json();
                 
-                document.getElementById("api-response").classList.remove("hidden");
-                document.getElementById("api-result").textContent = JSON.stringify(data, null, 2);
-                document.getElementById("api-result").style.color = "blue";
+                document.getElementById("api-b-response").classList.remove("hidden");
+                document.getElementById("api-b-result").textContent = JSON.stringify(data, null, 2);
+                document.getElementById("api-b-result").style.color = "blue";
             } catch (error) {
-                document.getElementById("api-response").classList.remove("hidden");
-                document.getElementById("api-result").textContent = `Error: ${error.message}`;
-                document.getElementById("api-result").style.color = "red";
+                document.getElementById("api-b-response").classList.remove("hidden");
+                document.getElementById("api-b-result").textContent = `Error: ${error.message}`;
+                document.getElementById("api-b-result").style.color = "red";
             }
         }
     </script>
