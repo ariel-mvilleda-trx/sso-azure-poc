@@ -78,7 +78,7 @@
                     },
                 };
 
-                // Scopes: incluye el scope de la API
+                // Scopes: no se incluyen scopes de API específicas aquí, se solicitarán dinámicamente al llamar a cada API
                 loginRequest = {
                     scopes: ["openid", "profile"],
                 };
@@ -91,16 +91,6 @@
                 msalInstance.initialize().then(() => {
                     msalInstance.handleRedirectPromise().then(handleResponse).catch(console.error);
                 });
-
-                // // obtener token para apiapp A ,dependiendo la funcionalidad delflujo seguido en el front
-                // const tokenA = await msalInstance.acquireTokenSilent({
-                //     scopes: [`api://${API_A_CLIENT_ID}/access`]
-                // });
-
-                // // obtener token para apiapp B ,dependiendo la funcionalidad delflujo seguido en el front
-                // const tokenB = await msalInstance.acquireTokenSilent({
-                //     scopes: [`api://${API_B_CLIENT_ID}/access`]
-                // });
             } catch (error) {
                 console.error("Error inicializando aplicación:", error);
             }
@@ -158,11 +148,11 @@
 
                 let tokenResponse;
                 try {
-                    // Intentar obtener token silenciosamente
+                    // Intentar obtener token A silenciosamente
                     tokenResponse = await msalInstance.acquireTokenSilent(tokenRequest);
                 } catch (silentError) {
                     // Si falla (ej: falta consentimiento), solicitar interactivamente
-                    console.log("Token silencioso falló, solicitando consentimiento interactivo...", silentError);
+                    console.log("Token A silencioso falló, solicitando consentimiento interactivo...", silentError);
                     tokenResponse = await msalInstance.acquireTokenPopup(tokenRequest);
                 }
                 
@@ -195,11 +185,11 @@
 
                 let tokenResponse;
                 try {
-                    // Intentar obtener token silenciosamente
+                    // Intentar obtener token B silenciosamente
                     tokenResponse = await msalInstance.acquireTokenSilent(tokenRequest);
                 } catch (silentError) {
                     // Si falla (ej: falta consentimiento), solicitar interactivamente
-                    console.log("Token silencioso falló, solicitando consentimiento interactivo...", silentError);
+                    console.log("Token B silencioso falló, solicitando consentimiento interactivo...", silentError);
                     tokenResponse = await msalInstance.acquireTokenPopup(tokenRequest);
                 }
                 
